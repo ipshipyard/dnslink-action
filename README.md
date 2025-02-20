@@ -35,6 +35,9 @@ It's a [composite action](https://docs.github.com/en/actions/sharing-automations
 
 ## Usage
 
+See the [IPNS Inspector](https://github.com/ipfs/ipns-inspector/blob/main/.github/workflows/build.yml) for a real-world example of this action in use.
+
+
 Here's a basic example of how to use this action in your workflow:
 
 ```yaml
