@@ -1,0 +1,145 @@
+name: 'DNSLink Action'
+description: 'Updates the DNSLink DNS record for a given domain'
+branding:
+  icon: 'box'
+  color: 'blue'
+
+inputs:
+  cid:
+    description: 'CID to update the DNSLink value to'
+    required: true
+  dnslink_domain:
+    description: 'Domain to update the DNSLink for e.g. if you set docs.ipfs.tech, the _dnslink.docs.ipfs.tech TXT record will be updated'
+    required: true
+  cf_record_id:
+    description: 'Cloudflare Record ID'
+    required: false
+  cf_zone_id:
+    description: 'Cloudflare Zone ID'
+    required: false
+  cf_auth_token:
+    description: 'Cloudflare API token'
+    required: false
+  dnsimple_token:
+    description: 'DNSimple API token'
+    required: false
+  dnsimple_account_id:
+    description: 'DNSimple account ID'
+    required: false
+  set_github_status:
+    description: 'Set the GitHub commit status with the DNSLink domain and CID'
+    default: 'false'
+    required: false
+  github_token:
+    description: 'GitHub token'
+    required: false
+
+outputs:
+  dnslink_domain:
+    description: 'The domain that was updated'
+    value: ${{ inputs.dnslink_domain }}
+  dnslink_cid:
+    description: 'The CID that was set'
+    value: ${{ inputs.cid }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate action inputs
+      shell: bash
+      run: |
+        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" || -z "${{ inputs.cf_record_id }}" ]]; then
+          echo "::error::DNSimple credentials (`dnsimple_token` and `dnsimple_account_id`) or Cloudflare credentials (`cf_auth_token`, `cf_zone_id`, and `cf_record_id`) must be configured"
+          exit 1
+        fi
+
+    - name: Set up Go
+      if: inputs.dnsimple_token != ''
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Install dnslink-dnsimple
+      if: inputs.dnsimple_token != ''
+      shell: bash
+      run: |
+        go install github.com/ipfs/dnslink-dnsimple@latest
+
+    - name: Update DNSLink in DNSimple
+      if: inputs.dnsimple_token != ''
+      shell: bash
+      env:
+        DNSIMPLE_TOKEN: ${{ inputs.dnsimple_token }}
+        DNSIMPLE_ACCOUNT_ID: ${{ inputs.dnsimple_account_id }}
+        DNSLINK_DOMAIN: ${{ inputs.dnslink_domain }}
+        DNSLINK_CID: ${{ inputs.cid }}
+      run: |
+        if [ -z "${DNSLINK_DOMAIN}" ]; then
+          echo "Error: dnslink_domain is empty. Skipping DNSLink update."
+          exit 1
+        fi
+        if [ -z "${DNSLINK_CID}" ]; then
+          echo "Error: CID is empty. Skipping DNSLink update."
+          exit 1
+        fi
+
+        echo "Updating DNSLink in DNSimple for: ${DNSLINK_DOMAIN}"
+        dnslink-dnsimple \
+          -domain "${DNSLINK_DOMAIN}" \
+          -record "_dnslink" \
+          -link "/ipfs/${DNSLINK_CID}" \
+          -token "${DNSIMPLE_TOKEN}" \
+          -account "${DNSIMPLE_ACCOUNT_ID}"
+
+    - name: Update DNSLink in Cloudflare
+      if: inputs.cf_auth_token != ''
+      shell: bash
+      env:
+        DNSLINK_DOMAIN: ${{ inputs.dnslink_domain }}
+        DNSLINK_CID: ${{ inputs.cid }}
+        CF_ZONE_ID: ${{ inputs.cf_zone_id }}
+        CF_RECORD_ID: ${{ inputs.cf_record_id }}
+        CF_AUTH_TOKEN: ${{ inputs.cf_auth_token }}
+      run: |
+        if [ -z "${DNSLINK_DOMAIN}" ]; then
+          echo "Error: dnslink_domain is empty. Skipping DNSLink update."
+          exit 1
+        fi
+        if [ -z "${DNSLINK_CID}" ]; then
+          echo "Error: CID is empty. Skipping DNSLink update."
+          exit 1
+        fi
+
+        echo "Updating DNSLink for: ${DNSLINK_DOMAIN}"
+        curl --request PUT \
+          --header "Authorization: Bearer ${CF_AUTH_TOKEN}" \
+          --header 'Content-Type: application/json' \
+          --url "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records/${CF_RECORD_ID}" \
+          --data "{
+            \"type\": \"TXT\",
+            \"name\": \"_dnslink.${DNSLINK_DOMAIN}\",
+            \"content\": \"dnslink=/ipfs/${DNSLINK_CID}\",
+            \"comment\": \"${{ github.repository }}/${{ github.sha }}\"
+          }"
+
+    - name: Set GitHub commit status
+      if: ${{ inputs.set_github_status }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const cid = '${{ inputs.cid }}';
+
+          // For PR events, we need to use the head SHA
+          const sha = context.eventName === 'pull_request'
+            ? context.payload.pull_request.head.sha
+            : context.sha;
+
+          await github.rest.repos.createCommitStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            sha: sha,
+            state: 'success',
+            description: `${{ inputs.dnslink_domain }} -> ${{ inputs.cid }}`,
+            context: 'DNSLink'
+          });
