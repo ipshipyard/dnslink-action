@@ -26,6 +26,12 @@ inputs:
   dnsimple_account_id:
     description: 'DNSimple account ID'
     required: false
+  gandi_pat:
+    description: 'GANDI Personal Authorization Token (Bearer auth)'
+    required: false
+  gandi_rrset_name:
+    description: 'Name of the record in the dnslink_domain (i.e. "mysubdomain", _dnslink. will be prepended'
+    required: false
   set_github_status:
     description: 'Set the GitHub commit status with the DNSLink domain and CID'
     default: 'false'
@@ -48,8 +54,8 @@ runs:
     - name: Validate action inputs
       shell: bash
       run: |
-        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" || -z "${{ inputs.cf_record_id }}" ]]; then
-          echo "::error::DNSimple credentials (`dnsimple_token` and `dnsimple_account_id`) or Cloudflare credentials (`cf_auth_token`, `cf_zone_id`, and `cf_record_id`) must be configured"
+        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" || -z "${{ inputs.cf_record_id }}" ]] && [[ -z "${{ inputs.gandi_pat }}" ]]; then
+          echo "::error::DNSimple credentials (`dnsimple_token` and `dnsimple_account_id`), Cloudflare credentials (`cf_auth_token`, `cf_zone_id`, and `cf_record_id`), or Gandi credentials (`gandi_pat`) must be configured"
           exit 1
         fi
 
@@ -121,6 +127,32 @@ runs:
             \"content\": \"dnslink=/ipfs/${DNSLINK_CID}\",
             \"comment\": \"${{ github.repository }}/${{ github.sha }}\"
           }"
+
+    - name: Update DNSLink in Gandi
+      if: inputs.gandi_pat != ''
+      shell: bash
+      env:
+        DNSLINK_DOMAIN: ${{ inputs.dnslink_domain }}
+        DNSLINK_CID: ${{ inputs.cid }}
+        GANDI_PAT: ${{ inputs.gandi_pat }}
+        GANDI_RRSET_NAME: ${{ inputs.gandi_rrset_name }}
+      run: |
+        if [ -z "${DNSLINK_DOMAIN}" ]; then
+          echo "Error: dnslink_domain is empty. Skipping DNSLink update."
+          exit 1
+        fi
+        if [ -z "${DNSLINK_CID}" ]; then
+          echo "Error: CID is empty. Skipping DNSLink update."
+          exit 1
+        fi
+
+        echo "Updating DNSLink in Gandi for: ${DNSLINK_DOMAIN}"
+        echo "TTL set to minimum: 300s"
+        curl -X PUT \
+          -H 'content-type: application/json' \
+          -d "{\"rrset_values\":[\"dnslink=/ipfs/${DNSLINK_CID}\"],\"rrset_ttl\":300}" \
+          -H "Authorization: Bearer ${GANDI_PAT}" \
+          "https://api.gandi.net/v5/livedns/domains/${DNSLINK_DOMAIN}/records/_dnslink.${GANDI_RRSET_NAME}/TXT"
 
     - name: Set GitHub commit status
       if: ${{ inputs.set_github_status }}
