@@ -6,6 +6,7 @@ Supports the following DNS providers:
 
 - Cloudflare
 - DNSimple
+- Gandi
 
 This action is built and maintained by [Interplanetary Shipyard](http://ipshipyard.com/).
 <a href="http://ipshipyard.com/"><img align="right" src="https://github.com/user-attachments/assets/39ed3504-bb71-47f6-9bf8-cb9a1698f272" /></a>
@@ -25,6 +26,8 @@ It's a [composite action](https://docs.github.com/en/actions/sharing-automations
 | `cf_auth_token`       | Cloudflare API token                                                                                                     |
 | `dnsimple_token`      | DNSimple API token                                                                                                       |
 | `dnsimple_account_id` | DNSimple account ID                                                                                                      |
+| `gandi_pat`           | Gandi Personal Authorization Token (Bearer auth)                                                                         |
+| `gandi_rrset_name`    | Name of the record for which to update the DNSLink record, e.g. `mysubdomain`, `_dnslink.` will be prepended)                               |
 
 ### Optional Inputs
 
