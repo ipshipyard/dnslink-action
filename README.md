@@ -27,7 +27,7 @@ It's a [composite action](https://docs.github.com/en/actions/sharing-automations
 | `dnsimple_token`      | DNSimple API token                                                                                                       |
 | `dnsimple_account_id` | DNSimple account ID                                                                                                      |
 | `gandi_pat`           | Gandi Personal Authorization Token (Bearer auth)                                                                         |
-| `gandi_rrset_name`    | Name of the record in the dnslink_domain (i.e. "mysubdomain", _dnslink. will be prepended)                               |
+| `gandi_rrset_name`    | Name of the record for which to update the DNSLink record, e.g. `mysubdomain`, `_dnslink.` will be prepended)                               |
 
 ### Optional Inputs
 
