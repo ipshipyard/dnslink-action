@@ -162,10 +162,18 @@ runs:
         script: |
           const cid = '${{ inputs.cid }}';
 
-          // For PR events, we need to use the head SHA
-          const sha = context.eventName === 'pull_request'
-            ? context.payload.pull_request.head.sha
-            : context.sha;
+          // Determine the correct SHA based on the event type
+          let sha;
+          if (context.eventName === 'workflow_run') {
+            // For workflow_run events triggered by PRs, use the PR's head SHA
+            sha = context.payload.workflow_run.head_sha;
+          } else if (context.eventName === 'pull_request' || context.eventName === 'pull_request_target') {
+            // For PR events, use the head SHA
+            sha = context.payload.pull_request.head.sha;
+          } else {
+            // For push events, use the commit SHA
+            sha = context.sha;
+          }
 
           await github.rest.repos.createCommitStatus({
             owner: context.repo.owner,
