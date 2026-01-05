@@ -54,8 +54,8 @@ runs:
     - name: Validate action inputs
       shell: bash
       run: |
-        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" || -z "${{ inputs.cf_record_id }}" ]] && [[ -z "${{ inputs.gandi_pat }}" ]]; then
-          echo "::error::DNSimple credentials (`dnsimple_token` and `dnsimple_account_id`), Cloudflare credentials (`cf_auth_token`, `cf_zone_id`, and `cf_record_id`), or Gandi credentials (`gandi_pat`) must be configured"
+        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" ]] && [[ -z "${{ inputs.gandi_pat }}" ]]; then
+          echo "::error::DNSimple credentials (\`dnsimple_token\` and \`dnsimple_account_id\`), Cloudflare credentials (\`cf_auth_token\` and \`cf_zone_id\`), or Gandi credentials (\`gandi_pat\`) must be configured"
           exit 1
         fi
 
@@ -106,27 +106,91 @@ runs:
         CF_ZONE_ID: ${{ inputs.cf_zone_id }}
         CF_RECORD_ID: ${{ inputs.cf_record_id }}
         CF_AUTH_TOKEN: ${{ inputs.cf_auth_token }}
+        GITHUB_REPO: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.sha }}
       run: |
+        set -euo pipefail
+
         if [ -z "${DNSLINK_DOMAIN}" ]; then
-          echo "Error: dnslink_domain is empty. Skipping DNSLink update."
+          echo "::error::dnslink_domain is empty"
           exit 1
         fi
         if [ -z "${DNSLINK_CID}" ]; then
-          echo "Error: CID is empty. Skipping DNSLink update."
+          echo "::error::CID is empty"
           exit 1
         fi
 
-        echo "Updating DNSLink for: ${DNSLINK_DOMAIN}"
-        curl --request PUT \
-          --header "Authorization: Bearer ${CF_AUTH_TOKEN}" \
-          --header 'Content-Type: application/json' \
-          --url "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records/${CF_RECORD_ID}" \
-          --data "{
-            \"type\": \"TXT\",
-            \"name\": \"_dnslink.${DNSLINK_DOMAIN}\",
-            \"content\": \"dnslink=/ipfs/${DNSLINK_CID}\",
-            \"comment\": \"${{ github.repository }}/${{ github.sha }}\"
-          }"
+        # Smart _dnslink. prefix handling
+        if [[ "$DNSLINK_DOMAIN" == _dnslink.* ]]; then
+          RECORD_NAME="$DNSLINK_DOMAIN"
+        else
+          RECORD_NAME="_dnslink.${DNSLINK_DOMAIN}"
+        fi
+
+        RECORD_CONTENT="\"dnslink=/ipfs/${DNSLINK_CID}\""
+        CF_API="https://api.cloudflare.com/client/v4"
+
+        # If record ID provided, use it directly (backward compatible)
+        if [ -n "${CF_RECORD_ID:-}" ]; then
+          echo "Using provided record ID: ${CF_RECORD_ID}"
+          DISCOVERED_ID="${CF_RECORD_ID}"
+        else
+          echo "Discovering existing records for: ${RECORD_NAME}"
+
+          # Query for existing TXT records with exact name match
+          RESPONSE=$(curl -s --fail-with-body "${CF_API}/zones/${CF_ZONE_ID}/dns_records?type=TXT&name=${RECORD_NAME}" \
+            -H "Authorization: Bearer ${CF_AUTH_TOKEN}" \
+            -H "Content-Type: application/json")
+
+          if [ "$(echo "$RESPONSE" | jq -r '.success')" != "true" ]; then
+            echo "::error::Cloudflare API error: $(echo "$RESPONSE" | jq -r '.errors')"
+            exit 1
+          fi
+
+          RECORD_COUNT=$(echo "$RESPONSE" | jq '.result | length')
+          echo "Found ${RECORD_COUNT} existing record(s)"
+
+          if [ "$RECORD_COUNT" -eq 0 ]; then
+            DISCOVERED_ID=""
+          elif [ "$RECORD_COUNT" -eq 1 ]; then
+            DISCOVERED_ID=$(echo "$RESPONSE" | jq -r '.result[0].id')
+            echo "Discovered record ID: ${DISCOVERED_ID}"
+          else
+            echo "::error::Found ${RECORD_COUNT} TXT records for ${RECORD_NAME}. Please manually remove duplicates in Cloudflare dashboard and re-run."
+            exit 1
+          fi
+        fi
+
+        # Create or Update the record
+        RECORD_DATA=$(jq -n \
+          --arg type "TXT" \
+          --arg name "$RECORD_NAME" \
+          --arg content "$RECORD_CONTENT" \
+          --arg comment "${GITHUB_REPO}/${GITHUB_SHA}" \
+          '{type: $type, name: $name, content: $content, comment: $comment}')
+
+        if [ -z "${DISCOVERED_ID:-}" ]; then
+          echo "Creating new DNS record..."
+          RESULT=$(curl -s --fail-with-body -X POST "${CF_API}/zones/${CF_ZONE_ID}/dns_records" \
+            -H "Authorization: Bearer ${CF_AUTH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$RECORD_DATA")
+        else
+          echo "Updating existing DNS record..."
+          RESULT=$(curl -s --fail-with-body -X PUT "${CF_API}/zones/${CF_ZONE_ID}/dns_records/${DISCOVERED_ID}" \
+            -H "Authorization: Bearer ${CF_AUTH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data "$RECORD_DATA")
+        fi
+
+        if [ "$(echo "$RESULT" | jq -r '.success')" != "true" ]; then
+          echo "::error::Failed to create/update record: $(echo "$RESULT" | jq -r '.errors')"
+          exit 1
+        fi
+
+        FINAL_ID=$(echo "$RESULT" | jq -r '.result.id')
+        echo "DNSLink updated: ${RECORD_NAME} -> ${RECORD_CONTENT}"
+        echo "Record ID: ${FINAL_ID}"
 
     - name: Update DNSLink in Gandi
       if: inputs.gandi_pat != ''
