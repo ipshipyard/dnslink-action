@@ -31,7 +31,6 @@ It's a [composite action](https://docs.github.com/en/actions/sharing-automations
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `cid`                 | CID of the build to update the DNSLink for                                                                               |
 | `dnslink_domain`      | Domain to update the DNSLink for e.g. if you set docs.ipfs.tech, the \_dnslink.docs.ipfs.tech TXT record will be updated |
-| `cf_record_id`        | Cloudflare Record ID                                                                                                     |
 | `cf_zone_id`          | Cloudflare Zone ID                                                                                                       |
 | `cf_auth_token`       | Cloudflare API token                                                                                                     |
 | `dnsimple_token`      | DNSimple API token                                                                                                       |
@@ -41,10 +40,66 @@ It's a [composite action](https://docs.github.com/en/actions/sharing-automations
 
 ### Optional Inputs
 
-| Input               | Description                                                  |
-| ------------------- | ------------------------------------------------------------ |
-| `set_github_status` | Set the GitHub commit status with the DNSLink domain and CID |
-| `github_token`      | GitHub token                                                 |
+| Input               | Description                                                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `cf_record_id`      | Cloudflare Record ID. If omitted, the action auto-discovers or creates the record (see below) |
+| `set_github_status` | Set the GitHub commit status with the DNSLink domain and CID                                   |
+| `github_token`      | GitHub token                                                                                   |
+
+### Cloudflare Setup
+
+#### Finding your Zone ID
+
+1. Log in to the [Cloudflare dashboard](https://dash.cloudflare.com/)
+2. Select your domain
+3. On the Overview page, scroll down to the **API** section in the right sidebar
+4. Copy the **Zone ID** and save it as `CF_DNS_ZONE_ID` secret in your repository
+
+See [Cloudflare docs](https://developers.cloudflare.com/fundamentals/setup/find-account-and-zone-ids/) for more details.
+
+#### Creating an API Token
+
+1. Go to [API Tokens](https://dash.cloudflare.com/profile/api-tokens) in your Cloudflare profile
+2. Click **Create Token**
+3. Select **Create Custom Token**
+4. Configure the token:
+   - **Token name**: e.g., `dnslink-action for example.com`
+   - **Permissions**: `Zone` / `DNS` / `Edit`
+   - **Zone Resources**: `Include` / `Specific zone` / select your domain
+5. Click **Continue to summary**, then **Create Token**
+6. Copy the token value and save it as `CF_DNS_AUTH_TOKEN` secret in your repository
+
+See [Cloudflare video tutorial](https://developers.cloudflare.com/videos/create-api-tokens/) for a walkthrough.
+
+### Security: Sandboxed DNSLink Domain
+
+For enhanced security, you can isolate DNSLink records on a separate domain. This ensures that even if your API token is compromised, attackers can only modify TXT records on the sandboxed domain, not your main domain.
+
+**Setup:**
+
+1. Create a dedicated zone for DNSLink records (e.g., `dnslinks.example.com`)
+2. Create an API token scoped only to that zone
+3. On your main domain, add a CNAME pointing to the sandboxed record:
+   ```
+   _dnslink.docs.yourdomain.com  CNAME  _dnslink.docs.dnslinks.example.com
+   ```
+4. Set `dnslink_domain` to the sandboxed domain (not your main domain):
+   ```yaml
+   dnslink_domain: docs.dnslinks.example.com
+   ```
+
+The action updates `_dnslink.docs.dnslinks.example.com`, and the CNAME redirects lookups from your main domain.
+
+### Cloudflare TXT Record ID Auto-Discovery
+
+When `cf_record_id` is not provided, the action automatically manages the DNS record:
+
+1. Queries Cloudflare for existing TXT records named `_dnslink.{dnslink_domain}`
+2. If no record exists: creates a new TXT record
+3. If one record exists: updates it with the new CID
+4. If multiple records exist: fails with an error asking you to manually remove duplicates
+
+This eliminates the need to manually look up and configure the record ID.
 
 ## Usage
 
@@ -102,7 +157,6 @@ jobs:
         with:
           cid: ${{ steps.deploy.outputs.cid }}
           dnslink_domain: mydomain.com
-          cf_record_id: ${{ secrets.CF_RECORD_ID }}
           cf_zone_id: ${{ secrets.CF_ZONE_ID }}
           cf_auth_token: ${{ secrets.CF_AUTH_TOKEN }}
 ```
@@ -206,7 +260,6 @@ jobs:
         with:
           cid: ${{ steps.deploy.outputs.cid }}
           dnslink_domain: mydomain.com
-          cf_record_id: ${{ secrets.CF_RECORD_ID }}
           cf_zone_id: ${{ secrets.CF_ZONE_ID }}
           cf_auth_token: ${{ secrets.CF_AUTH_TOKEN }}
           github_token: ${{ github.token }}
