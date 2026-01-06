@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.1.1] - 2026-01-06
+
+### Fixed
+- DNSimple: use correct CLI flags for `dnslink-dnsimple` tool (`--domain`, `--record`, `--link`)
+
+### Removed
+- DNSimple: removed unused `dnsimple_account_id` input (account is auto-discovered from token)
+
 ## [1.1.0] - 2026-01-05
 
 ### Added
