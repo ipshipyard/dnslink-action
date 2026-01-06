@@ -21,10 +21,7 @@ inputs:
     description: 'Cloudflare API token'
     required: false
   dnsimple_token:
-    description: 'DNSimple API token'
-    required: false
-  dnsimple_account_id:
-    description: 'DNSimple account ID'
+    description: 'DNSimple API token (account is auto-discovered)'
     required: false
   gandi_pat:
     description: 'GANDI Personal Authorization Token (Bearer auth)'
@@ -54,8 +51,8 @@ runs:
     - name: Validate action inputs
       shell: bash
       run: |
-        if [[ -z "${{ inputs.dnsimple_token }}" || -z "${{ inputs.dnsimple_account_id }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" ]] && [[ -z "${{ inputs.gandi_pat }}" ]]; then
-          echo "::error::DNSimple credentials (\`dnsimple_token\` and \`dnsimple_account_id\`), Cloudflare credentials (\`cf_auth_token\` and \`cf_zone_id\`), or Gandi credentials (\`gandi_pat\`) must be configured"
+        if [[ -z "${{ inputs.dnsimple_token }}" ]] && [[ -z "${{ inputs.cf_auth_token }}" || -z "${{ inputs.cf_zone_id }}" ]] && [[ -z "${{ inputs.gandi_pat }}" ]]; then
+          echo "::error::DNSimple credentials (\`dnsimple_token\`), Cloudflare credentials (\`cf_auth_token\` and \`cf_zone_id\`), or Gandi credentials (\`gandi_pat\`) must be configured"
           exit 1
         fi
 
@@ -69,14 +66,13 @@ runs:
       if: inputs.dnsimple_token != ''
       shell: bash
       run: |
-        go install github.com/ipfs/dnslink-dnsimple@latest
+        go install github.com/ipfs/dnslink-dnsimple@v0.1.0
 
     - name: Update DNSLink in DNSimple
       if: inputs.dnsimple_token != ''
       shell: bash
       env:
         DNSIMPLE_TOKEN: ${{ inputs.dnsimple_token }}
-        DNSIMPLE_ACCOUNT_ID: ${{ inputs.dnsimple_account_id }}
         DNSLINK_DOMAIN: ${{ inputs.dnslink_domain }}
         DNSLINK_CID: ${{ inputs.cid }}
       run: |
@@ -91,11 +87,9 @@ runs:
 
         echo "Updating DNSLink in DNSimple for: ${DNSLINK_DOMAIN}"
         dnslink-dnsimple \
-          -domain "${DNSLINK_DOMAIN}" \
-          -record "_dnslink" \
-          -link "/ipfs/${DNSLINK_CID}" \
-          -token "${DNSIMPLE_TOKEN}" \
-          -account "${DNSIMPLE_ACCOUNT_ID}"
+          --domain "${DNSLINK_DOMAIN}" \
+          --record "_dnslink" \
+          --link "/ipfs/${DNSLINK_CID}"
 
     - name: Update DNSLink in Cloudflare
       if: inputs.cf_auth_token != ''
