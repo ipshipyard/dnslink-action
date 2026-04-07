@@ -48,6 +48,13 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Verify workflow_run safety
+      if: github.event_name == 'workflow_run' && github.event.workflow_run.event != 'push'
+      shell: bash
+      run: |
+        echo "::error::Refusing to update DNS from a workflow_run triggered by '${{ github.event.workflow_run.event }}'. Only push events are safe for production. Add \"github.event.workflow_run.event == 'push'\" to your job or step condition."
+        exit 1
+
     - name: Validate action inputs
       shell: bash
       run: |

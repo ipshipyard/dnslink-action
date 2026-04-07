@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [1.1.3] - 2026-04-07
+
+### Added
+
+- Refuse to update DNS when called from a `workflow_run` triggered by a non-push event (e.g., `pull_request`). This prevents fork PRs from updating production DNS even if the calling workflow is missing an `event == 'push'` gate.
+
 ## [1.1.2] - 2026-04-07
 
 ### Fixed
