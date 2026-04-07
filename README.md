@@ -256,7 +256,7 @@ jobs:
 
       - name: Update DNSLink
         uses: ipshipyard/dnslink-action@v1
-        if: github.event.workflow_run.head_branch == 'main' # only update for main branch
+        if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
         with:
           cid: ${{ steps.deploy.outputs.cid }}
           dnslink_domain: mydomain.com
@@ -266,9 +266,18 @@ jobs:
           set_github_status: true
 ```
 
+> [!WARNING]
+> **Do not use `github.event.workflow_run.head_branch` alone for production deployment gates.**
+> In `workflow_run` context, `head_branch` reflects the branch name of the triggering workflow, which is controlled by the PR author. A fork PR with a branch named `main` will pass a `head_branch == 'main'` check.
+> For production-only steps or jobs, always gate on `github.event.workflow_run.event == 'push'` in addition to the branch name. Only repository collaborators with write access can trigger `push` events on the default branch.
+>
+> See [GitHub docs on security hardening](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) and [GitHub Security Lab: keeping workflows secure](https://securitylab.github.com/resources/github-actions-new-patterns-and-mitigations/) for more details.
+
 ## FAQ
 
 - Why not use an infrastructure-as-code tool like [OctoDNS](https://github.com/octodns/octodns) or [DNSControl](https://github.com/StackExchange/dnscontrol)?
   - You can! Those are great tools.
 - How can I safely build on PRs from forks?
-  - Use the two-workflow pattern shown above. The build workflow runs on untrusted fork code without secrets access, while the deploy workflow only runs after a successful build and has access to secrets but never executes untrusted code. This pattern uses GitHub's `workflow_run` event to securely pass artifacts between workflows.
+  - Use the two-workflow pattern shown above. The build workflow runs on untrusted fork code without secrets access, while the deploy workflow only runs after a successful build and has access to secrets but never executes untrusted code. This pattern uses GitHub's `workflow_run` event to securely pass artifacts between workflows. If your deploy workflow has production-only steps gated on a branch name, always check `github.event.workflow_run.event == 'push'` rather than relying solely on `github.event.workflow_run.head_branch`, since fork PRs can use any branch name.
+- Why should I check `workflow_run.event == 'push'` for production deployments?
+  - In a `workflow_run` event, `head_branch` reflects the branch name of the triggering workflow run. For fork PRs, this is the fork's branch name, which is controlled by the PR author. A fork PR with a branch named `main` will pass `head_branch == 'main'`. Checking `event == 'push'` is safe because only collaborators with write access can push to the default branch. See [GitHub Security Lab](https://securitylab.github.com/resources/github-actions-new-patterns-and-mitigations/) for details.
