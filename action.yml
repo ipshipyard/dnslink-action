@@ -65,7 +65,7 @@ runs:
 
     - name: Set up Go
       if: inputs.dnsimple_token != ''
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v6
       with:
         go-version: '1.23'
 
@@ -221,7 +221,7 @@ runs:
 
     - name: Set GitHub commit status
       if: ${{ inputs.set_github_status }}
-      uses: actions/github-script@v7
+      uses: actions/github-script@v8
       with:
         github-token: ${{ inputs.github_token }}
         script: |
